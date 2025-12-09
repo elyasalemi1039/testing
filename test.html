@@ -1,0 +1,1141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PDCON Selection Specifier</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- FontAwesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- jsPDF & AutoTable -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+
+    <!-- IDB-Keyval (Lightweight wrapper for IndexedDB) -->
+    <script src="https://cdn.jsdelivr.net/npm/idb-keyval@6/dist/umd.js"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        
+        /* Chart Container */
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 180px;
+            margin: 0 auto;
+            height: 180px;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .nav-item.active { background-color: #ffffff; color: #171648; border-left: 4px solid #171648; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+        .nav-item { border-left: 4px solid transparent; }
+        
+        /* Image Gallery Grid */
+        .gallery-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(60px, 1fr));
+            gap: 8px;
+        }
+
+        /* Save Indicator Animation */
+        .save-indicator { transition: opacity 0.3s ease; }
+        .saving { color: #f59e0b; }
+        .saved { color: #10b981; }
+    </style>
+</head>
+<body class="text-slate-800 h-screen flex flex-col overflow-hidden">
+
+    <!-- Top Bar -->
+    <header class="bg-white border-b border-slate-200 h-20 flex items-center justify-between px-6 shadow-sm z-20 shrink-0">
+        <div class="flex items-center gap-4">
+            <!-- App Logo / Branding -->
+            <div id="company-logo-header" class="h-12 w-auto flex items-center justify-center overflow-hidden">
+                <!-- Logo injected via JS -->
+            </div>
+            <div class="h-8 w-px bg-slate-200"></div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="font-bold text-lg text-slate-800 leading-tight">Selection Specifier</h1>
+                    <!-- Save Status Indicator -->
+                    <span id="save-status" class="text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 text-slate-400 opacity-0 save-indicator">
+                        <i class="fa-solid fa-check mr-1"></i>Saved
+                    </span>
+                </div>
+                <p class="text-xs text-slate-500">Job: <span id="header-job-ref">New Job</span></p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <input type="file" id="import-file" class="hidden" accept=".json">
+            
+            <div class="flex bg-slate-50 border border-slate-200 rounded-lg p-1 gap-1">
+                <button onclick="createNewProject()" class="text-xs font-medium text-slate-600 hover:bg-white hover:text-red-600 hover:shadow-sm px-3 py-2 rounded transition" title="Start New Project (Clear Current)">
+                    <i class="fa-solid fa-plus mr-1"></i> New
+                </button>
+                <div class="w-px bg-slate-200 my-1"></div>
+                <button onclick="document.getElementById('import-file').click()" class="text-xs font-medium text-slate-600 hover:bg-white hover:text-blue-600 hover:shadow-sm px-3 py-2 rounded transition">
+                    <i class="fa-solid fa-folder-open mr-1"></i> Load
+                </button>
+                <button onclick="exportProjectJSON()" class="text-xs font-medium text-slate-600 hover:bg-white hover:text-blue-600 hover:shadow-sm px-3 py-2 rounded transition">
+                    <i class="fa-solid fa-save mr-1"></i> Backup
+                </button>
+            </div>
+
+            <div class="h-6 w-px bg-slate-300 mx-2"></div>
+            
+            <button onclick="openModal('settings-modal')" class="text-slate-400 hover:text-blue-900 px-2 transition" title="Company Settings">
+                <i class="fa-solid fa-cog text-xl"></i>
+            </button>
+            <!-- Primary Action Button with Custom Dark Blue -->
+            <button onclick="generatePDF()" class="text-white text-sm font-semibold px-5 py-2.5 rounded shadow-md transition flex items-center gap-2 hover:opacity-90 transform active:scale-95" style="background-color: #171648;">
+                <i class="fa-solid fa-file-contract"></i> GENERATE PDF
+            </button>
+        </div>
+    </header>
+
+    <div class="flex flex-1 overflow-hidden">
+        
+        <!-- Sidebar -->
+        <aside class="w-72 bg-white border-r border-slate-200 flex flex-col overflow-y-auto shrink-0 z-10">
+            <!-- Progress -->
+            <div class="p-6 border-b border-slate-100">
+                <div class="chart-container mb-2">
+                    <canvas id="progressChart"></canvas>
+                </div>
+                <div class="text-center mt-2">
+                    <p class="text-xs font-bold text-slate-400 uppercase tracking-widest">Progress</p>
+                    <p class="text-3xl font-bold mt-1" style="color: #171648;" id="progress-percent">0%</p>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="p-4 flex-1">
+                <div class="flex justify-between items-center px-2 mb-4">
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wide">Categories</h3>
+                    <button onclick="addCategory()" class="hover:bg-slate-100 p-1.5 rounded transition text-xs font-bold" style="color: #171648;">
+                        <i class="fa-solid fa-plus"></i> ADD
+                    </button>
+                </div>
+                <nav id="nav-container" class="space-y-1.5 pb-10">
+                    <!-- JS Injected -->
+                </nav>
+            </div>
+            
+            <!-- Client Access Button -->
+            <div class="p-4 bg-slate-50 border-t border-slate-200 sticky bottom-0">
+                <button onclick="scrollToBottom()" class="w-full text-white py-3 rounded font-medium hover:opacity-90 transition shadow-sm text-sm" style="background-color: #171648;">
+                    <i class="fa-solid fa-pen-nib mr-2"></i> Client Sign-Off
+                </button>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <main class="flex-1 overflow-y-auto bg-slate-50/50 p-8 relative" id="main-scroll">
+            
+            <!-- Project Header Card -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-8 mb-8 grid grid-cols-1 lg:grid-cols-2 gap-10">
+                <!-- Client Details -->
+                <div>
+                    <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wide mb-6 border-b border-slate-100 pb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs text-white" style="background-color: #171648;"><i class="fa-solid fa-user"></i></span>
+                        Client Details
+                    </h2>
+                    <div class="grid grid-cols-2 gap-5">
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Client Name(s)</label>
+                            <input type="text" id="client-name" class="w-full text-sm border-slate-300 rounded border p-2.5 bg-slate-50 focus:bg-white transition focus:ring-1 focus:outline-none" style="--tw-ring-color: #171648;" placeholder="e.g. John & Jane Smith">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Project Address</label>
+                            <input type="text" id="project-address" class="w-full text-sm border-slate-300 rounded border p-2.5 bg-slate-50 focus:bg-white transition focus:ring-1 focus:outline-none" style="--tw-ring-color: #171648;" placeholder="e.g. 123 Construction Ave, Suburb">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Phone</label>
+                            <input type="text" id="client-phone" class="w-full text-sm border-slate-300 rounded border p-2.5 bg-slate-50 focus:bg-white transition focus:ring-1 focus:outline-none" style="--tw-ring-color: #171648;" placeholder="(04) ...">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Email</label>
+                            <input type="email" id="client-email" class="w-full text-sm border-slate-300 rounded border p-2.5 bg-slate-50 focus:bg-white transition focus:ring-1 focus:outline-none" style="--tw-ring-color: #171648;" placeholder="client@email.com">
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Internal/Job Details -->
+                <div>
+                    <h2 class="text-sm font-bold text-slate-900 uppercase tracking-wide mb-6 border-b border-slate-100 pb-3 flex items-center gap-2">
+                        <span class="w-6 h-6 rounded-full flex items-center justify-center text-xs text-white" style="background-color: #171648;"><i class="fa-solid fa-clipboard-list"></i></span>
+                        Job Details
+                    </h2>
+                    <div class="grid grid-cols-2 gap-5">
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Job Number</label>
+                            <input type="text" id="job-number" class="w-full text-sm border-slate-300 rounded border p-2.5 bg-slate-50 focus:bg-white transition focus:ring-1 focus:outline-none" style="--tw-ring-color: #171648;" placeholder="J-2025-001">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Contract Date</label>
+                            <input type="date" id="job-date" class="w-full text-sm border-slate-300 rounded border p-2.5 bg-slate-50 focus:bg-white transition focus:ring-1 focus:outline-none" style="--tw-ring-color: #171648;">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-bold text-slate-500 mb-1.5 uppercase">Notes / Version</label>
+                            <textarea id="job-notes" class="w-full text-sm border-slate-300 rounded border p-2.5 bg-slate-50 focus:bg-white transition h-24 focus:ring-1 focus:outline-none" style="--tw-ring-color: #171648;" placeholder="Internal notes..."></textarea>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dynamic Section Area -->
+            <div id="section-content-area" class="pb-10">
+                <!-- Injected via JS -->
+            </div>
+
+            <!-- Sign Off Section -->
+            <div id="sign-off-section" class="mt-12 bg-white rounded-xl shadow-sm border border-slate-200 p-10">
+                <div class="text-center mb-10">
+                    <h2 class="text-2xl font-bold text-slate-800">Client Acceptance</h2>
+                    <p class="text-slate-500 mt-2">Please review all specifications above carefully before signing.</p>
+                </div>
+
+                <div class="max-w-3xl mx-auto bg-slate-50 p-8 rounded border border-slate-200 mb-8 text-sm text-slate-600 h-40 overflow-y-auto leading-relaxed shadow-inner">
+                    <p class="font-bold mb-3 text-slate-800">Terms and Conditions of Selection:</p>
+                    <p class="mb-3">1. The Client confirms that the selections made in this document are final and agrees to the specifications listed.</p>
+                    <p class="mb-3">2. Any changes requested after the signing of this document may incur a variation fee and potential delays to the project timeline.</p>
+                    <p class="mb-3">3. All selections are subject to availability. The Builder reserves the right to substitute items of equal value and quality if specified items become unavailable.</p>
+                    <p>4. It is the Client's responsibility to verify that colours and finishes match their expectations as screen representations may vary.</p>
+                </div>
+
+                <div class="max-w-md mx-auto">
+                    <div class="flex items-start gap-3 mb-6 p-4 bg-slate-50 rounded border border-slate-100">
+                        <input type="checkbox" id="terms-check" class="mt-1 w-5 h-5 rounded border-slate-300 focus:ring-offset-0" style="color: #171648; --tw-ring-color: #171648;">
+                        <label for="terms-check" class="text-sm text-slate-700 font-medium">I have read and agree to the Terms and Conditions and confirm the specifications listed in this document are correct.</label>
+                    </div>
+
+                    <div class="mb-6">
+                        <label class="block text-xs font-bold text-slate-500 mb-2 uppercase">Full Name (Signature)</label>
+                        <input type="text" id="sign-name" class="w-full text-xl font-serif border-slate-300 rounded border p-4 bg-white focus:ring-2 outline-none shadow-sm" style="--tw-ring-color: #171648;" placeholder="Type name to sign...">
+                    </div>
+                    
+                    <button onclick="signDocument()" id="btn-sign" class="w-full text-white font-bold py-4 rounded shadow-lg transition disabled:opacity-50 disabled:cursor-not-allowed transform hover:-translate-y-0.5" style="background-color: #10b981;">
+                        <i class="fa-solid fa-pen-nib mr-2"></i> CONFIRM & SIGN SPECIFICATION
+                    </button>
+                    
+                    <div id="signed-stamp" class="hidden mt-6 border-4 border-double border-green-500 rounded p-6 text-center bg-green-50/50">
+                        <div class="text-green-700 font-bold text-xl uppercase tracking-widest mb-2"><i class="fa-solid fa-circle-check mr-2"></i>Digitally Signed</div>
+                        <div id="stamp-name" class="text-slate-900 font-serif text-2xl my-2 border-b border-green-200 inline-block px-4 pb-1"></div>
+                        <div id="stamp-date" class="text-slate-500 text-xs font-mono uppercase mt-2"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Footer Spacing -->
+            <div class="h-20"></div>
+        </main>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4 transition-opacity">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-md p-0 overflow-hidden">
+            <div class="flex justify-between items-center p-5 border-b border-slate-100 bg-slate-50">
+                <h3 class="font-bold text-lg text-slate-800">Company Settings</h3>
+                <button onclick="closeModal('settings-modal')" class="text-slate-400 hover:text-slate-600 w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-200 transition"><i class="fa-solid fa-times"></i></button>
+            </div>
+            
+            <div class="p-6 space-y-5">
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-2 uppercase">Company Logo</label>
+                    <div class="flex items-center gap-4">
+                        <div id="settings-logo-preview" class="w-20 h-20 bg-slate-50 border border-slate-200 flex items-center justify-center rounded-lg overflow-hidden p-2">
+                            <!-- Preview injected via JS -->
+                        </div>
+                        <div class="flex flex-col gap-2">
+                            <button onclick="document.getElementById('company-logo-input').click()" class="text-xs bg-white border border-slate-300 hover:bg-slate-50 px-4 py-2 rounded font-medium transition shadow-sm">
+                                Upload Custom Logo
+                            </button>
+                            <button onclick="resetLogo()" class="text-xs text-red-500 hover:text-red-700 px-2 py-1 hover:underline text-left">
+                                Reset to PDCON Default
+                            </button>
+                        </div>
+                        <input type="file" id="company-logo-input" class="hidden" accept="image/*" onchange="handleLogoUpload(this)">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-2 uppercase">PDF Accent Colour</label>
+                    <div class="flex items-center gap-3">
+                        <input type="color" id="settings-accent-color" class="h-10 w-20 border border-slate-300 rounded cursor-pointer p-1">
+                        <span class="text-xs text-slate-500">Used for headers & links</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-2 uppercase">Company Name</label>
+                    <input type="text" id="settings-company-name" class="w-full text-sm border border-slate-300 rounded p-2.5">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold text-slate-600 mb-2 uppercase">Company Details</label>
+                    <textarea id="settings-company-details" class="w-full text-sm border border-slate-300 rounded p-2.5 h-24" placeholder="Address, Phone, etc."></textarea>
+                </div>
+            </div>
+
+            <div class="p-5 border-t border-slate-100 bg-slate-50 flex justify-end">
+                <button onclick="saveSettings()" class="text-white px-6 py-2.5 rounded shadow hover:opacity-90 font-medium transition" style="background-color: #171648;">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Libraries (Hidden) -->
+    <datalist id="lib-suppliers">
+        <option value="Bunnings Trade">
+        <option value="Reece Plumbing">
+        <option value="Beaumont Tiles">
+        <option value="Harvey Norman Commercial">
+        <option value="Winning Appliances">
+        <option value="Bradnams Windows">
+        <option value="PGH Bricks">
+    </datalist>
+
+    <script>
+        // --- CONSTANTS ---
+        // PDCON Custom Logo (Base64 SVG)
+        const DEFAULT_LOGO = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyMDAgODAiPjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iODAiIGZpbGw9IiNmZmZmZmYiLz48dGV4dCB4PSIxMCIgeT0iNTUiIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXdlaWdodD0iOTAwIiBmb250LXNpemU9IjUwIiBmaWxsPSIjMTcxNjQ4IiBsZXR0ZXItc3BhY2luZz0iLTIiPlBEPC90ZXh0Pjx0ZXh0IHg9Ijc4IiB5PSI1NSIgZm9udC1mYW1pbHk9IkFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI2MDAiIGZvbnQtc2l6ZT0iNTAiIGZpbGw9IiMxNzE2NDgiPkNPTjwvdGV4dD48cmVjdCB4PSI4IiB5PSI2MyIgd2lkdGg9IjE4MCIgaGVpZ2h0PSI0IiBmaWxsPSIjMTcxNjQ4Ii8+PC9zdmc+";
+        const DEFAULT_ACCENT = "#171648"; // PDCON Navy
+        const DB_KEY = "pdcon_spec_system_v1";
+
+        // --- DATA STRUCTURE ---
+        const initialAppState = {
+            meta: {
+                jobNumber: '',
+                contractDate: new Date().toISOString().split('T')[0],
+                notes: '',
+                logo: DEFAULT_LOGO,
+                accentColor: DEFAULT_ACCENT,
+                companyName: 'PDCON',
+                companyDetails: 'Level 19, 263 William St, Melbourne 3000\n+61 408 255 259\nbaqir@pdcon.com.au',
+                signature: null 
+            },
+            client: {
+                name: '',
+                address: '',
+                phone: '',
+                email: ''
+            },
+            sections: [
+                {
+                    id: 'ext',
+                    title: 'Exterior',
+                    subsections: [
+                        {
+                            title: 'Roofing',
+                            items: [
+                                { name: 'Roof Material', fields: { Manufacturer: '', Profile: '', Colour: '' }, supplier: {name: '', contact: ''}, images: [], datasheet: '', notes: '' },
+                                { name: 'Fascia & Gutter', fields: { Manufacturer: '', Profile: '', Colour: '' }, supplier: {name: '', contact: ''}, images: [], datasheet: '', notes: '' }
+                            ]
+                        },
+                        {
+                            title: 'Masonry',
+                            items: [
+                                { name: 'Face Bricks', fields: { Manufacturer: '', Product: '', Colour: '', Mortar: '' }, supplier: {name: '', contact: ''}, images: [], datasheet: '', notes: '' }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    id: 'int',
+                    title: 'Internal',
+                    subsections: [
+                        {
+                            title: 'Kitchen',
+                            items: [
+                                { name: 'Benchtop', fields: { Material: '', Colour: '', Thickness: '' }, supplier: {name: '', contact: ''}, images: [], datasheet: '', notes: '' },
+                                { name: 'Cabinetry', fields: { Profile: '', Finish: '', Colour: '' }, supplier: {name: '', contact: ''}, images: [], datasheet: '', notes: '' },
+                                { name: 'Sink', fields: { Brand: '', Model: '', Finish: '' }, supplier: {name: '', contact: ''}, images: [], datasheet: '', notes: '' }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        };
+
+        let appState = JSON.parse(JSON.stringify(initialAppState)); // Deep copy
+        let activeSectionIndex = 0;
+        let chartInstance = null;
+        let saveTimeout = null;
+
+        // --- INITIALIZATION ---
+        window.addEventListener('DOMContentLoaded', async () => {
+            await loadFromStorage();
+            initListeners();
+            renderAll();
+            renderSettings();
+        });
+
+        // --- PERSISTENCE ---
+        async function loadFromStorage() {
+            try {
+                const stored = await idbKeyval.get(DB_KEY);
+                if (stored) {
+                    appState = stored;
+                    if(!appState.meta.accentColor) appState.meta.accentColor = DEFAULT_ACCENT;
+                    if(!appState.meta.logo) appState.meta.logo = DEFAULT_LOGO;
+                    console.log("Loaded from local storage");
+                }
+            } catch (e) {
+                console.error("Failed to load storage", e);
+            }
+        }
+
+        function triggerSave() {
+            const indicator = document.getElementById('save-status');
+            indicator.textContent = 'Saving...';
+            indicator.className = 'text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 save-indicator saving opacity-100';
+            
+            if (saveTimeout) clearTimeout(saveTimeout);
+            
+            saveTimeout = setTimeout(async () => {
+                try {
+                    await idbKeyval.set(DB_KEY, appState);
+                    indicator.innerHTML = '<i class="fa-solid fa-check mr-1"></i>Saved';
+                    indicator.className = 'text-[10px] font-medium px-2 py-0.5 rounded bg-slate-100 save-indicator saved opacity-100';
+                    setTimeout(() => {
+                        if(indicator.classList.contains('saved')) indicator.classList.add('opacity-0');
+                    }, 2000);
+                } catch (e) {
+                    indicator.textContent = 'Save Failed';
+                    indicator.className = 'text-[10px] font-medium px-2 py-0.5 rounded bg-red-100 text-red-500 opacity-100';
+                }
+            }, 1000);
+        }
+
+        async function createNewProject() {
+            if(confirm("Are you sure? This will clear the current project data. Make sure you have backed up (saved to file) if needed.")) {
+                const companyName = appState.meta.companyName;
+                const companyDetails = appState.meta.companyDetails;
+                const logo = appState.meta.logo;
+                const accent = appState.meta.accentColor;
+
+                appState = JSON.parse(JSON.stringify(initialAppState));
+                
+                appState.meta.companyName = companyName;
+                appState.meta.companyDetails = companyDetails;
+                appState.meta.logo = logo;
+                appState.meta.accentColor = accent;
+
+                activeSectionIndex = 0;
+                renderAll();
+                renderSettings();
+                triggerSave();
+            }
+        }
+
+        // --- LISTENERS ---
+        function initListeners() {
+            ['client-name', 'project-address', 'client-phone', 'client-email'].forEach(id => {
+                const map = { 'client-name': 'name', 'project-address': 'address', 'client-phone': 'phone', 'client-email': 'email' };
+                document.getElementById(id).addEventListener('input', (e) => {
+                    appState.client[map[id]] = e.target.value;
+                    renderHeaderJob();
+                    triggerSave();
+                });
+            });
+
+            document.getElementById('job-number').addEventListener('input', (e) => { 
+                appState.meta.jobNumber = e.target.value; 
+                renderHeaderJob(); 
+                triggerSave();
+            });
+            document.getElementById('job-date').addEventListener('input', (e) => {
+                appState.meta.contractDate = e.target.value;
+                triggerSave();
+            });
+            document.getElementById('job-notes').addEventListener('input', (e) => {
+                appState.meta.notes = e.target.value;
+                triggerSave();
+            });
+
+            document.getElementById('import-file').addEventListener('change', handleFileLoad);
+        }
+
+        // --- RENDER LOGIC ---
+
+        function renderAll() {
+            renderHeaderJob();
+            renderNavigation();
+            renderMainContent();
+            updateChart();
+            renderSettings(); 
+        }
+
+        function renderHeaderJob() {
+            document.getElementById('header-job-ref').textContent = appState.meta.jobNumber || 'New Job';
+            document.getElementById('client-name').value = appState.client.name;
+            document.getElementById('project-address').value = appState.client.address;
+            document.getElementById('client-phone').value = appState.client.phone;
+            document.getElementById('client-email').value = appState.client.email;
+            document.getElementById('job-number').value = appState.meta.jobNumber;
+            document.getElementById('job-date').value = appState.meta.contractDate;
+            document.getElementById('job-notes').value = appState.meta.notes;
+
+            if(appState.meta.signature) {
+                document.getElementById('btn-sign').classList.add('hidden');
+                document.getElementById('signed-stamp').classList.remove('hidden');
+                document.getElementById('stamp-name').textContent = appState.meta.signature.name;
+                document.getElementById('stamp-date').textContent = new Date(appState.meta.signature.date).toLocaleString();
+                document.getElementById('terms-check').checked = true;
+                document.getElementById('terms-check').disabled = true;
+                document.getElementById('sign-name').value = appState.meta.signature.name;
+                document.getElementById('sign-name').disabled = true;
+            } else {
+                document.getElementById('btn-sign').classList.remove('hidden');
+                document.getElementById('signed-stamp').classList.add('hidden');
+                document.getElementById('terms-check').disabled = false;
+                document.getElementById('sign-name').disabled = false;
+            }
+        }
+
+        function renderNavigation() {
+            const container = document.getElementById('nav-container');
+            container.innerHTML = '';
+
+            appState.sections.forEach((sec, idx) => {
+                const isActive = idx === activeSectionIndex;
+                const completed = countCompletedItems(sec);
+                const total = countTotalItems(sec);
+                const accent = appState.meta.accentColor || DEFAULT_ACCENT;
+                
+                const div = document.createElement('div');
+                div.className = `nav-item px-4 py-3 cursor-pointer transition flex justify-between items-center group rounded-lg mx-2 ${!isActive ? 'hover:bg-slate-50 text-slate-600' : ''}`;
+                
+                if(isActive) {
+                    div.style.backgroundColor = accent;
+                    div.style.color = '#ffffff';
+                    div.style.boxShadow = '0 2px 4px rgba(0,0,0,0.1)';
+                    div.classList.remove('nav-item'); // Remove default border logic
+                } 
+
+                div.onclick = () => { activeSectionIndex = idx; renderNavigation(); renderMainContent(); };
+                
+                div.innerHTML = `
+                    <div class="flex items-center gap-3">
+                        <i class="fa-solid fa-folder${isActive ? '-open' : ''} text-lg" style="color: ${isActive ? '#fff' : '#cbd5e1'}"></i>
+                        <span class="font-medium text-sm">${sec.title}</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs px-2 py-0.5 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}">${completed}/${total}</span>
+                        <button onclick="deleteCategory(${idx}, event)" class="opacity-0 group-hover:opacity-100 ${isActive ? 'text-white/70 hover:text-white' : 'text-slate-300 hover:text-red-500'} px-1 transition"><i class="fa-solid fa-trash text-xs"></i></button>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+        }
+
+        function renderMainContent() {
+            const container = document.getElementById('section-content-area');
+            const section = appState.sections[activeSectionIndex];
+            const accent = appState.meta.accentColor || DEFAULT_ACCENT;
+            
+            if(!section) { container.innerHTML = '<div class="p-12 text-center text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">No category selected. Add one from the sidebar.</div>'; return; }
+
+            let html = `
+                <div class="flex justify-between items-end mb-8 border-b border-slate-200 pb-4">
+                    <div>
+                        <input type="text" value="${section.title}" onchange="updateCategoryTitle(this.value)" class="text-3xl font-bold text-slate-800 bg-transparent border border-transparent hover:border-slate-300 rounded px-1 -ml-1 focus:outline-none transition w-full max-w-lg focus:bg-white focus:ring-2" style="--tw-ring-color:${accent}" title="Click to rename category">
+                        <p class="text-slate-500 text-sm mt-1 px-1">Manage specifications for this category.</p>
+                    </div>
+                    <button onclick="addSubCategory()" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 px-4 py-2.5 rounded shadow-sm text-sm font-bold transition flex items-center gap-2">
+                        <i class="fa-solid fa-layer-group" style="color:${accent}"></i>Add Sub-Category
+                    </button>
+                </div>
+            `;
+
+            section.subsections.forEach((sub, subIdx) => {
+                html += `
+                    <div class="bg-white rounded-xl shadow-sm border border-slate-200 mb-8 overflow-hidden">
+                        <div class="bg-slate-50 px-6 py-4 border-b border-slate-200 flex justify-between items-center group">
+                            <div class="flex items-center gap-3">
+                                <i class="fa-solid fa-chevron-right text-slate-300 text-sm"></i>
+                                <input type="text" value="${sub.title}" onchange="updateSubTitle(${subIdx}, this.value)" class="font-bold text-slate-700 bg-transparent border-b-2 border-transparent hover:border-slate-300 focus:outline-none text-lg transition focus:border-blue-500">
+                            </div>
+                            <div class="flex gap-2 opacity-100 lg:opacity-0 group-hover:opacity-100 transition">
+                                <button onclick="addItem(${subIdx})" class="hover:bg-white px-3 py-1.5 rounded border border-transparent hover:border-slate-200 text-xs font-bold uppercase transition" style="color:${accent}"><i class="fa-solid fa-plus mr-1"></i> Add Item</button>
+                                <button onclick="deleteSubCategory(${subIdx})" class="text-slate-400 hover:text-red-500 hover:bg-red-50 px-3 py-1.5 rounded text-xs font-bold uppercase transition"><i class="fa-solid fa-trash mr-1"></i> Delete Group</button>
+                            </div>
+                        </div>
+                        <div class="p-6 space-y-6">
+                `;
+
+                sub.items.forEach((item, itemIdx) => {
+                    html += renderItemCard(item, subIdx, itemIdx);
+                });
+
+                if(sub.items.length === 0) {
+                    html += `<div class="text-center py-10 bg-slate-50/50 rounded-lg border-2 border-dashed border-slate-200 text-slate-400 text-sm cursor-pointer hover:border-blue-300 hover:text-blue-500 transition" onclick="addItem(${subIdx})">
+                        <i class="fa-solid fa-plus-circle text-2xl mb-2 opacity-50"></i><br>
+                        Click here to add your first item to <strong>${sub.title}</strong>
+                    </div>`;
+                }
+
+                html += `</div></div>`;
+            });
+
+            container.innerHTML = html;
+        }
+
+        function renderItemCard(item, subIdx, itemIdx) {
+            let fieldsHtml = '';
+            for (const [key, val] of Object.entries(item.fields)) {
+                fieldsHtml += `
+                    <div class="relative group/field">
+                        <div class="flex justify-between items-baseline">
+                            <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">${key}</label>
+                            <button onclick="removeField(${subIdx}, ${itemIdx}, '${key}')" class="text-[10px] text-red-300 hover:text-red-500 opacity-0 group-hover/field:opacity-100 transition"><i class="fa-solid fa-times"></i></button>
+                        </div>
+                        <input type="text" value="${val}" onchange="updateField(${subIdx}, ${itemIdx}, '${key}', this.value)" class="w-full text-sm border-slate-200 rounded p-2 focus:ring-1 focus:bg-white bg-slate-50 transition outline-none" style="--tw-ring-color:${appState.meta.accentColor}" placeholder="...">
+                    </div>
+                `;
+            }
+
+            let imagesHtml = item.images.map((img, imgIdx) => `
+                <div class="relative group aspect-square rounded-lg overflow-hidden border border-slate-200 shadow-sm">
+                    <img src="${img}" class="w-full h-full object-cover">
+                    <button onclick="removeImage(${subIdx}, ${itemIdx}, ${imgIdx})" class="absolute top-1 right-1 bg-white/90 text-red-500 w-6 h-6 rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition shadow hover:bg-red-500 hover:text-white"><i class="fa-solid fa-times"></i></button>
+                </div>
+            `).join('');
+
+            return `
+                <div class="border border-slate-200 rounded-xl p-5 hover:shadow-lg transition bg-white relative group/card">
+                    <button onclick="deleteItem(${subIdx}, ${itemIdx})" class="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition opacity-0 group-hover/card:opacity-100 p-2"><i class="fa-solid fa-trash-alt"></i></button>
+                    
+                    <div class="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                        <!-- Info Column -->
+                        <div class="xl:col-span-3 space-y-5 border-b xl:border-b-0 xl:border-r border-slate-100 pb-5 xl:pb-0 xl:pr-5">
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Item Name</label>
+                                <input type="text" value="${item.name}" onchange="updateItemName(${subIdx}, ${itemIdx}, this.value)" class="w-full font-bold text-slate-800 text-lg border-b border-transparent hover:border-slate-200 focus:border-blue-500 outline-none py-0 placeholder-slate-300" placeholder="Item Name">
+                            </div>
+                             <div>
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Supplier</label>
+                                <input type="text" list="lib-suppliers" value="${item.supplier.name}" onchange="updateSupplier(${subIdx}, ${itemIdx}, 'name', this.value)" class="w-full text-sm border-slate-200 rounded p-2 mb-2 bg-slate-50" placeholder="Supplier Name">
+                                <input type="text" value="${item.supplier.contact}" onchange="updateSupplier(${subIdx}, ${itemIdx}, 'contact', this.value)" class="w-full text-xs text-slate-500 border-slate-200 rounded p-2 bg-slate-50" placeholder="Contact Details...">
+                            </div>
+                            <div>
+                                <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2 block">Visuals</label>
+                                <div class="gallery-grid mb-2">
+                                    ${imagesHtml}
+                                    <button onclick="triggerItemImageUpload(${subIdx}, ${itemIdx})" class="aspect-square border-2 border-dashed border-slate-200 rounded-lg flex flex-col items-center justify-center text-slate-400 hover:border-blue-400 hover:bg-blue-50 transition group">
+                                        <i class="fa-solid fa-camera mb-1 group-hover:scale-110 transition"></i>
+                                        <span class="text-[9px] font-bold">ADD</span>
+                                    </button>
+                                </div>
+                                <input type="file" id="img-input-${subIdx}-${itemIdx}" class="hidden" accept="image/*" multiple onchange="handleImageUpload(this, ${subIdx}, ${itemIdx})">
+                            </div>
+                        </div>
+
+                        <!-- Specs Column -->
+                        <div class="xl:col-span-9">
+                            <div class="flex justify-between items-center mb-4">
+                                <span class="text-xs font-bold text-slate-800 uppercase bg-slate-100 px-2 py-1 rounded">Specifications</span>
+                                <button onclick="addField(${subIdx}, ${itemIdx})" class="text-xs font-bold hover:underline flex items-center gap-1" style="color:${appState.meta.accentColor}">
+                                    <i class="fa-solid fa-plus-circle"></i> Add Custom Field
+                                </button>
+                            </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-4 mb-6">
+                                ${fieldsHtml}
+                            </div>
+                            
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 pt-5 border-t border-slate-100">
+                                <div>
+                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Datasheet Link</label>
+                                    <div class="flex gap-2 group/link">
+                                        <div class="relative flex-1">
+                                            <i class="fa-solid fa-link absolute left-3 top-2.5 text-slate-300 text-xs"></i>
+                                            <input type="text" value="${item.datasheet}" onchange="updateItemProp(${subIdx}, ${itemIdx}, 'datasheet', this.value)" class="w-full pl-8 text-sm border-slate-200 rounded p-2 text-blue-600 bg-slate-50 focus:bg-white transition outline-none focus:ring-1" style="--tw-ring-color:${appState.meta.accentColor}" placeholder="https://...">
+                                        </div>
+                                        ${item.datasheet ? `<a href="${item.datasheet}" target="_blank" class="p-2 bg-slate-100 rounded text-slate-500 hover:text-white hover:bg-blue-600 border border-slate-200 transition"><i class="fa-solid fa-external-link-alt"></i></a>` : ''}
+                                    </div>
+                                </div>
+                                <div>
+                                    <label class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1 block">Installation Notes</label>
+                                    <input type="text" value="${item.notes}" onchange="updateItemProp(${subIdx}, ${itemIdx}, 'notes', this.value)" class="w-full text-sm border-slate-200 rounded p-2 bg-slate-50 focus:bg-white transition outline-none focus:ring-1" style="--tw-ring-color:${appState.meta.accentColor}" placeholder="e.g. Install horizontally...">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // --- CORE ACTIONS ---
+        function countCompletedItems(sec) {
+            let count = 0;
+            sec.subsections.forEach(sub => {
+                sub.items.forEach(item => { if (Object.values(item.fields).some(v => v !== '')) count++; });
+            });
+            return count;
+        }
+
+        function countTotalItems(sec) {
+            return sec.subsections.reduce((acc, sub) => acc + sub.items.length, 0);
+        }
+
+        function updateChart() {
+            let completed = 0;
+            let total = 0;
+            appState.sections.forEach(sec => {
+                completed += countCompletedItems(sec);
+                total += countTotalItems(sec);
+            });
+
+            const percent = total === 0 ? 0 : Math.round((completed / total) * 100);
+            const accent = appState.meta.accentColor || DEFAULT_ACCENT;
+            document.getElementById('progress-percent').textContent = `${percent}%`;
+            document.getElementById('progress-percent').style.color = accent;
+
+            if (chartInstance) chartInstance.destroy();
+            const ctx = document.getElementById('progressChart').getContext('2d');
+            chartInstance = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Done', 'Pending'],
+                    datasets: [{ data: [completed, total - completed], backgroundColor: [accent, '#e2e8f0'], borderWidth: 0 }]
+                },
+                options: { cutout: '75%', plugins: { legend: { display: false }, tooltip: { enabled: false } } }
+            });
+        }
+
+        function addCategory() {
+            const name = prompt("New Category Name:", "New Category");
+            if(name) {
+                appState.sections.push({ id: Date.now(), title: name, subsections: [] });
+                renderNavigation();
+                triggerSave();
+            }
+        }
+        function deleteCategory(idx, e) {
+            e.stopPropagation();
+            if(confirm("Delete this entire category?")) {
+                appState.sections.splice(idx, 1);
+                if(activeSectionIndex >= appState.sections.length) activeSectionIndex = Math.max(0, appState.sections.length - 1);
+                renderAll();
+                triggerSave();
+            }
+        }
+        function updateCategoryTitle(val) { appState.sections[activeSectionIndex].title = val; renderNavigation(); triggerSave(); }
+        
+        function addSubCategory() {
+            appState.sections[activeSectionIndex].subsections.push({ title: "New Group", items: [] });
+            renderMainContent();
+            updateChart();
+            renderNavigation();
+            triggerSave();
+        }
+        function deleteSubCategory(subIdx) {
+            if(confirm("Delete this group and all its items?")) {
+                appState.sections[activeSectionIndex].subsections.splice(subIdx, 1);
+                renderMainContent();
+                updateChart();
+                renderNavigation();
+                triggerSave();
+            }
+        }
+        function updateSubTitle(subIdx, val) { appState.sections[activeSectionIndex].subsections[subIdx].title = val; triggerSave(); }
+
+        function addItem(subIdx) {
+            appState.sections[activeSectionIndex].subsections[subIdx].items.push({
+                name: 'New Item',
+                fields: { Manufacturer: '', Colour: '' },
+                supplier: { name: '', contact: '' },
+                images: [],
+                datasheet: '',
+                notes: ''
+            });
+            renderMainContent();
+            updateChart();
+            renderNavigation();
+            triggerSave();
+        }
+        function deleteItem(subIdx, itemIdx) {
+            if(confirm("Remove this item?")) {
+                appState.sections[activeSectionIndex].subsections[subIdx].items.splice(itemIdx, 1);
+                renderMainContent();
+                updateChart();
+                renderNavigation();
+                triggerSave();
+            }
+        }
+
+        function updateItemName(s, i, v) { appState.sections[activeSectionIndex].subsections[s].items[i].name = v; triggerSave(); }
+        function updateSupplier(s, i, field, v) { appState.sections[activeSectionIndex].subsections[s].items[i].supplier[field] = v; triggerSave(); }
+        function updateItemProp(s, i, prop, v) { appState.sections[activeSectionIndex].subsections[s].items[i][prop] = v; triggerSave(); }
+        function updateField(s, i, key, v) { 
+            appState.sections[activeSectionIndex].subsections[s].items[i].fields[key] = v; 
+            updateChart(); 
+            renderNavigation();
+            triggerSave();
+        }
+        
+        function addField(s, i) {
+            const name = prompt("Field Name (e.g., Size, Grout):");
+            if(name) {
+                appState.sections[activeSectionIndex].subsections[s].items[i].fields[name] = "";
+                renderMainContent();
+                triggerSave();
+            }
+        }
+        function removeField(s, i, key) {
+            delete appState.sections[activeSectionIndex].subsections[s].items[i].fields[key];
+            renderMainContent();
+            triggerSave();
+        }
+
+        // --- IMAGE HANDLING ---
+        function triggerItemImageUpload(s, i) { document.getElementById(`img-input-${s}-${i}`).click(); }
+        function handleImageUpload(input, s, i) {
+            if (input.files) {
+                Array.from(input.files).forEach(file => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        appState.sections[activeSectionIndex].subsections[s].items[i].images.push(e.target.result);
+                        if(file === input.files[input.files.length -1]) {
+                            renderMainContent(); 
+                            triggerSave();
+                        }
+                    };
+                    reader.readAsDataURL(file);
+                });
+            }
+        }
+        function removeImage(s, i, imgIdx) {
+            appState.sections[activeSectionIndex].subsections[s].items[i].images.splice(imgIdx, 1);
+            renderMainContent();
+            triggerSave();
+        }
+
+        // --- SETTINGS & LOGO ---
+        function openModal(id) { document.getElementById(id).classList.remove('hidden'); renderSettings(); }
+        function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+        
+        function renderSettings() {
+            document.getElementById('settings-company-name').value = appState.meta.companyName;
+            document.getElementById('settings-company-details').value = appState.meta.companyDetails;
+            document.getElementById('settings-accent-color').value = appState.meta.accentColor || DEFAULT_ACCENT;
+            
+            // Header Logo
+            const headerLogoDiv = document.getElementById('company-logo-header');
+            const logoToUse = appState.meta.logo || DEFAULT_LOGO;
+            
+            headerLogoDiv.innerHTML = `<img src="${logoToUse}" class="h-full w-auto object-contain">`;
+            document.getElementById('settings-logo-preview').innerHTML = `<img src="${logoToUse}" class="w-full h-full object-contain">`;
+        }
+
+        function handleLogoUpload(input) {
+            if(input.files && input.files[0]) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    appState.meta.logo = e.target.result;
+                    renderSettings();
+                    triggerSave();
+                };
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
+        
+        function resetLogo() {
+            appState.meta.logo = DEFAULT_LOGO;
+            renderSettings();
+            triggerSave();
+        }
+
+        function saveSettings() {
+            appState.meta.companyName = document.getElementById('settings-company-name').value;
+            appState.meta.companyDetails = document.getElementById('settings-company-details').value;
+            appState.meta.accentColor = document.getElementById('settings-accent-color').value;
+            closeModal('settings-modal');
+            triggerSave();
+            renderAll(); // Re-render to apply color changes
+        }
+
+        // --- SIGNATURE ---
+        function scrollToBottom() {
+            document.getElementById('main-scroll').scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+            const el = document.getElementById('sign-off-section');
+            el.classList.add('ring-4', 'ring-blue-200');
+            setTimeout(() => el.classList.remove('ring-4', 'ring-blue-200'), 1000);
+        }
+
+        function signDocument() {
+            const name = document.getElementById('sign-name').value;
+            const checked = document.getElementById('terms-check').checked;
+            
+            if(!checked) { alert("Please agree to the Terms and Conditions."); return; }
+            if(!name) { alert("Please type your full name to sign."); return; }
+
+            appState.meta.signature = {
+                name: name,
+                date: new Date().toISOString()
+            };
+            
+            renderHeaderJob();
+            triggerSave();
+            alert("Document Signed Successfully.");
+        }
+
+        // --- FILE I/O ---
+        function exportProjectJSON() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(appState));
+            const dl = document.createElement('a');
+            dl.setAttribute("href", dataStr);
+            dl.setAttribute("download", `Spec_${appState.meta.jobNumber || 'Project'}.json`);
+            dl.click();
+        }
+        function handleFileLoad(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const loaded = JSON.parse(ev.target.result);
+                    appState = loaded;
+                    if(!appState.meta.logo) appState.meta.logo = DEFAULT_LOGO;
+                    if(!appState.meta.accentColor) appState.meta.accentColor = DEFAULT_ACCENT;
+                    
+                    activeSectionIndex = 0;
+                    renderAll();
+                    triggerSave();
+                    alert("Project Loaded.");
+                } catch(err) { alert("Invalid File"); }
+            };
+            reader.readAsText(file);
+        }
+
+        // --- PDF GENERATION ---
+        
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? [
+                parseInt(result[1], 16),
+                parseInt(result[2], 16),
+                parseInt(result[3], 16)
+            ] : [23, 22, 72];
+        }
+
+        async function generatePDF() {
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            const accentHex = appState.meta.accentColor || DEFAULT_ACCENT;
+            const accentRGB = hexToRgb(accentHex);
+            
+            // 1. HEADER
+            let yPos = 20;
+            
+            const logoToUse = appState.meta.logo || DEFAULT_LOGO;
+            try {
+                if(logoToUse.startsWith('data:image')) {
+                     doc.addImage(logoToUse, 'PNG', 15, 15, 30, 12, undefined, 'FAST'); // Wide logo
+                }
+            } catch(e) { console.error("Logo Error", e); }
+
+            // Company Info
+            doc.setFont('helvetica', 'bold');
+            doc.setFontSize(16);
+            doc.setTextColor(30);
+            doc.text(appState.meta.companyName, 50, 20); // Moved slightly right
+            
+            doc.setFont('helvetica', 'normal');
+            doc.setFontSize(9);
+            doc.setTextColor(100);
+            const splitDetails = doc.splitTextToSize(appState.meta.companyDetails, 80);
+            doc.text(splitDetails, 50, 26);
+
+            // Document Title
+            doc.setFontSize(22);
+            doc.setTextColor(accentRGB[0], accentRGB[1], accentRGB[2]); // Accent
+            doc.text("SCHEDULE OF FINISHES", 200, 18, { align: 'right' }); 
+            
+            yPos = 50;
+
+            // 2. CLIENT DETAILS
+            doc.setDrawColor(200);
+            doc.setFillColor(248, 250, 252);
+            doc.rect(14, yPos, 182, 35, 'FD');
+            
+            doc.setFontSize(10);
+            doc.setTextColor(50);
+            doc.setFont('helvetica', 'bold');
+            doc.text("Client:", 18, yPos + 8);
+            doc.text("Project Address:", 18, yPos + 16);
+            doc.text("Job Number:", 120, yPos + 8);
+            doc.text("Date:", 120, yPos + 16);
+
+            doc.setFont('helvetica', 'normal');
+            doc.text(appState.client.name, 50, yPos + 8);
+            doc.text(appState.client.address, 50, yPos + 16);
+            doc.text(appState.client.phone + " | " + appState.client.email, 50, yPos + 24);
+            
+            doc.text(appState.meta.jobNumber, 150, yPos + 8);
+            doc.text(appState.meta.contractDate, 150, yPos + 16);
+
+            yPos += 45;
+
+            // 3. CONTENT
+            for(const section of appState.sections) {
+                if(yPos > 260) { doc.addPage(); yPos = 20; }
+                
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.setTextColor(0);
+                doc.setFillColor(226, 232, 240);
+                doc.rect(14, yPos - 6, 182, 8, 'F');
+                doc.text(section.title.toUpperCase(), 16, yPos);
+                yPos += 10;
+
+                for(const sub of section.subsections) {
+                     if(yPos > 260) { doc.addPage(); yPos = 20; }
+                     doc.setFontSize(12);
+                     doc.setFont('helvetica', 'bold');
+                     doc.setTextColor(80);
+                     doc.text(sub.title, 14, yPos);
+                     yPos += 4;
+
+                     const bodyData = sub.items.map(item => {
+                         let specTxt = "";
+                         for(const [k, v] of Object.entries(item.fields)) if(v) specTxt += `${k}: ${v}\n`;
+                         
+                         let supTxt = "";
+                         if(item.supplier.name) supTxt += `${item.supplier.name}\n`;
+                         if(item.supplier.contact) supTxt += `${item.supplier.contact}`;
+                         
+                         let extra = "";
+                         if(item.notes) extra += `Note: ${item.notes}\n`;
+                         
+                         return [item.name, specTxt, supTxt, extra, ''];
+                     });
+
+                     doc.autoTable({
+                         startY: yPos,
+                         head: [['Item', 'Specifications', 'Supplier', 'Notes/Datasheet', 'Visuals']],
+                         body: bodyData,
+                         theme: 'grid',
+                         headStyles: { fillColor: accentRGB, textColor: 255, fontSize: 9 }, 
+                         styles: { fontSize: 8, cellPadding: 3, valign: 'top', lineColor: [220], lineWidth: 0.1 },
+                         columnStyles: {
+                             0: { fontStyle: 'bold', width: 30 },
+                             1: { width: 45 },
+                             2: { width: 30 },
+                             3: { width: 35 },
+                             4: { width: 40, minCellHeight: 25 }
+                         },
+                         didDrawCell: (data) => {
+                             if(data.column.index === 3 && data.section === 'body') {
+                                 const item = sub.items[data.row.index];
+                                 if(item && item.datasheet) {
+                                     const textH = doc.getTextDimensions(data.cell.text).h; 
+                                     const linkY = data.cell.y + textH + 6;
+                                     
+                                     doc.setTextColor(accentRGB[0], accentRGB[1], accentRGB[2]);
+                                     doc.setFontSize(7);
+                                     doc.textWithLink("VIEW DATASHEET", data.cell.x + 2, linkY, { url: item.datasheet });
+                                     doc.setDrawColor(accentRGB[0], accentRGB[1], accentRGB[2]);
+                                     doc.line(data.cell.x + 2, linkY + 0.5, data.cell.x + 23, linkY + 0.5);
+                                     doc.setTextColor(50);
+                                 }
+                             }
+                             if(data.column.index === 4 && data.section === 'body') {
+                                 const item = sub.items[data.row.index];
+                                 if(item && item.images && item.images.length > 0) {
+                                     const imgSize = 12;
+                                     const gap = 2;
+                                     let xOff = data.cell.x + 2;
+                                     let yOff = data.cell.y + 2;
+                                     
+                                     item.images.slice(0, 3).forEach((img, idx) => {
+                                         if(xOff + imgSize < data.cell.x + data.cell.width) {
+                                            try {
+                                                doc.addImage(img, 'JPEG', xOff, yOff, imgSize, imgSize);
+                                                doc.setDrawColor(200);
+                                                doc.rect(xOff, yOff, imgSize, imgSize);
+                                            } catch(e) {}
+                                            xOff += imgSize + gap;
+                                         }
+                                     });
+                                 }
+                             }
+                         }
+                     });
+                     
+                     yPos = doc.lastAutoTable.finalY + 10;
+                }
+                yPos += 5;
+            }
+
+            // 4. SIGN OFF
+            doc.addPage();
+            doc.setFontSize(14); doc.setFont('helvetica', 'bold');
+            doc.text("CLIENT ACCEPTANCE", 14, 20);
+            
+            doc.setFontSize(10); doc.setFont('helvetica', 'normal');
+            doc.text("Terms and Conditions:", 14, 30);
+            
+            const terms = [
+                "1. The Client confirms that the selections made in this document are final.",
+                "2. Changes requested after signing may incur variation fees.",
+                "3. Selections are subject to availability; the Builder may substitute for equal value.",
+                "4. Screen representations of colours may vary from actual products."
+            ];
+            let tY = 38;
+            terms.forEach(t => {
+                doc.text(t, 14, tY);
+                tY += 6;
+            });
+
+            doc.setDrawColor(100);
+            doc.setLineWidth(0.5);
+            doc.rect(14, 80, 182, 50);
+            
+            doc.setFontSize(9);
+            doc.setTextColor(100);
+            doc.text("Signed by (Client Name):", 18, 90);
+            
+            if(appState.meta.signature) {
+                doc.setFont('times', 'italic');
+                doc.setFontSize(24);
+                doc.setTextColor(0, 100, 0);
+                doc.text(appState.meta.signature.name, 40, 110);
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.setTextColor(100);
+                doc.text(`Digitally Signed: ${new Date(appState.meta.signature.date).toLocaleString()}`, 130, 125, { align: 'right' });
+                doc.text("IP: Digital Verification", 130, 128, { align: 'right' });
+            } else {
+                doc.line(20, 115, 120, 115);
+                doc.text("Signature", 20, 120);
+                doc.line(140, 115, 180, 115);
+                doc.text("Date", 140, 120);
+            }
+
+            const pageCount = doc.internal.getNumberOfPages();
+            for(let i = 1; i <= pageCount; i++) {
+                doc.setPage(i);
+                doc.setFontSize(8);
+                doc.setTextColor(150);
+                doc.text(`${appState.meta.companyName} | Job: ${appState.meta.jobNumber}`, 14, 290);
+                doc.text(`Page ${i} of ${pageCount}`, 200, 290, { align: 'right' });
+            }
+
+            doc.save(`Contract_Specs_${appState.meta.jobNumber}.pdf`);
+        }
+    </script>
+</body>
+</html>
